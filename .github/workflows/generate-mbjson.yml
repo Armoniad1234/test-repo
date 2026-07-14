@@ -1,11 +1,16 @@
 name: Generate MBJSON Tree-sitter parser
 
 on:
-  pull_request:
+  push:
+    branches:
+      - "mbjson-comment-parser"
     paths:
       - "grammar.js"
       - "package.json"
       - ".github/workflows/generate-mbjson.yml"
+
+permissions:
+  contents: write
 
 jobs:
   generate:
@@ -13,28 +18,64 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: mbjson-comment-parser
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install Tree-sitter CLI
-        run: npm install --no-save tree-sitter-cli@0.22.6
-
-      - name: Generate parser sources
-        run: ./node_modules/.bin/tree-sitter generate
-
-      - name: Verify comment node
+      - name: Generate parser sources and save diagnostics
+        shell: bash
         run: |
-          grep -n '"comment"' src/node-types.json
-          grep -n 'sym_comment' src/parser.c
+          set +e
+          : > generation.log
 
-      - name: Upload generated sources
-        uses: actions/upload-artifact@v4
-        with:
-          name: mbjson-generated-src
-          path: |
-            src/parser.c
-            src/grammar.json
-            src/node-types.json
+          npm install --no-save tree-sitter-cli@0.22.6 >> generation.log 2>&1
+          INSTALL_STATUS=$?
+
+          if [ "$INSTALL_STATUS" -eq 0 ]; then
+            ./node_modules/.bin/tree-sitter generate >> generation.log 2>&1
+            GENERATE_STATUS=$?
+          else
+            GENERATE_STATUS=$INSTALL_STATUS
+          fi
+
+          {
+            echo
+            echo "INSTALL_STATUS=$INSTALL_STATUS"
+            echo "GENERATE_STATUS=$GENERATE_STATUS"
+            echo
+            echo "COMMENT NODE IN node-types.json:"
+            if [ -f src/node-types.json ]; then
+              grep -n '"comment"' src/node-types.json || true
+            else
+              echo "src/node-types.json missing"
+            fi
+            echo
+            echo "COMMENT SYMBOL IN parser.c:"
+            if [ -f src/parser.c ]; then
+              grep -n 'sym_comment' src/parser.c | head || true
+            else
+              echo "src/parser.c missing"
+            fi
+          } >> generation.log
+
+          exit 0
+
+      - name: Commit generated sources and diagnostics
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add generation.log
+          [ -f src/parser.c ] && git add src/parser.c
+          [ -f src/grammar.json ] && git add src/grammar.json
+          [ -f src/node-types.json ] && git add src/node-types.json
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Generate MBJSON parser sources"
+            git push origin HEAD:mbjson-comment-parser
+          fi
