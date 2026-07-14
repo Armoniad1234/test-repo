@@ -1,11 +1,14 @@
-name: Generate MBJSON Tree-sitter parser
+name: Generate MBJSON parser
 
 on:
-  pull_request:
+  push:
     paths:
       - "grammar.js"
-      - "package.json"
       - ".github/workflows/generate-mbjson.yml"
+      - "trigger.txt"
+
+permissions:
+  contents: write
 
 jobs:
   generate:
@@ -14,27 +17,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
       - name: Install Tree-sitter CLI
-        run: npm install --no-save tree-sitter-cli@0.22.6
+        run: cargo install tree-sitter-cli --version 0.22.6 --locked
 
       - name: Generate parser sources
-        run: ./node_modules/.bin/tree-sitter generate
+        run: tree-sitter generate
 
-      - name: Verify comment node
+      - name: Verify link_arrow node
         run: |
-          grep -n '"comment"' src/node-types.json
-          grep -n 'sym_comment' src/parser.c
+          grep -n '"link_arrow"' src/node-types.json
+          grep -n 'sym_link_arrow' src/parser.c
 
-      - name: Upload generated sources
-        uses: actions/upload-artifact@v4
-        with:
-          name: mbjson-generated-src
-          path: |
-            src/parser.c
-            src/grammar.json
-            src/node-types.json
+      - name: Commit generated sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/parser.c src/grammar.json src/node-types.json
+          git commit -m "Generate MBJSON parser sources" || exit 0
+          git push
