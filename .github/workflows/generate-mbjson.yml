@@ -1,0 +1,40 @@
+name: Generate MBJSON Tree-sitter parser
+
+on:
+  pull_request:
+    paths:
+      - "grammar.js"
+      - "package.json"
+      - ".github/workflows/generate-mbjson.yml"
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Tree-sitter CLI
+        run: npm install --no-save tree-sitter-cli@0.22.6
+
+      - name: Generate parser sources
+        run: ./node_modules/.bin/tree-sitter generate
+
+      - name: Verify comment node
+        run: |
+          grep -n '"comment"' src/node-types.json
+          grep -n 'sym_comment' src/parser.c
+
+      - name: Upload generated sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbjson-generated-src
+          path: |
+            src/parser.c
+            src/grammar.json
+            src/node-types.json
